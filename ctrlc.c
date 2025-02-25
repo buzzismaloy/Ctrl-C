@@ -23,6 +23,7 @@ void editorProcessKeypress();
 
 /* output func declaration */
 void editorRefreshScreen();
+void editorDrawRows();
 
 int main() {
 	enableRawMode();
@@ -37,6 +38,9 @@ int main() {
 
 /* terminal functions realization */
 void quit_error(const char* s) {
+	write(STDOUT_FILENO, "\x1b[2J", 4);
+	write(STDOUT_FILENO, "\x1b[H", 3);
+
 	perror(s);
 	exit(EXIT_FAILURE);
 }
@@ -90,13 +94,24 @@ void editorProcessKeypress() {
 
 	switch (c) {
 		case CTRL_KEY('q'):
+			write(STDOUT_FILENO, "\x1b[2J", 4);
+			write(STDOUT_FILENO, "\x1b[H", 3);
 			exit(EXIT_SUCCESS);
 			break;
 	}
 }
 
 /* output func realization */
+void editorDrawRows() {
+	for (int i = 0; i < 30; ++i) {
+		write(STDOUT_FILENO, "~>\r\n", 4);
+	}
+}
+
 void editorRefreshScreen() {
 	write(STDOUT_FILENO, "\x1b[2J", 4);
+	write(STDOUT_FILENO, "\x1b[H", 3);
+
+	editorDrawRows();
 	write(STDOUT_FILENO, "\x1b[H", 3);
 }
