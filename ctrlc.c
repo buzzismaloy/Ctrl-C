@@ -16,27 +16,20 @@ struct termios orig_termios;
 void disableRawMode();
 void enableRawMode();
 void quit_error(const char*); // program dies with error
-void editorReadKey();
+char editorReadKey();
+
+/* input func declarations */
 void editorProcessKeypress();
 
+/* output func declaration */
+void editorRefreshScreen();
 
 int main() {
 	enableRawMode();
 
-	char c;
 	while (1) {
-		c = '\0';
-		if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) {
-			quit_error("read error in main");
-		}
-		if (iscntrl(c)) {
-			printf("%d\r\n", c);
-		}
-		else {
-			printf("%d ('%c')\r\n", c, c);
-		}
-
-		if (c == CTRL_KEY('q')) break;
+		editorRefreshScreen();
+		editorProcessKeypress();
 	}
 
 	return EXIT_SUCCESS;
@@ -76,10 +69,34 @@ void enableRawMode() {
 	}
 }
 
-void editorReadKey() {
+char editorReadKey() {
+	int nread;
+	char c;
+	while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
+	//here read() waits untill user press key by reading nbytes = 1 from STDIN_FILENO
+	//read() returns number of bytes read from fd(here it is STDIN_FILENO)
+	//and if user pressed key, the loop is over and read character is returned
+		if (nread == -1 && errno != EAGAIN) {
+			quit_error("error in reading key");
+		}
+	}
 
+	return c;
 }
 
+/* input func realization */
 void editorProcessKeypress() {
+	char c = editorReadKey();
 
+	switch (c) {
+		case CTRL_KEY('q'):
+			exit(EXIT_SUCCESS);
+			break;
+	}
+}
+
+/* output func realization */
+void editorRefreshScreen() {
+	write(STDOUT_FILENO, "\x1b[2J", 4);
+	write(STDOUT_FILENO, "\x1b[H", 3);
 }
