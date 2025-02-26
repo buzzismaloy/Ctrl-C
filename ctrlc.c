@@ -6,12 +6,15 @@
 #include <ctype.h>
 #include <errno.h>
 #include <sys/ioctl.h>
+#include <string.h>
 
 /* defines */
 #define CTRL_KEY(k) ((k) & 0x1f) // getting the control key version of the k like ctrl + letter
+#define CTRLC_VERSION "1.0"
 
 /* data */
 struct editorConfig {
+	int cursor_x, cursor_y;
 	int screenrows;
 	int screencols;
 	struct termios orig_termios;
@@ -30,12 +33,24 @@ int getWindowSize(int*, int*);
 /* input func declarations */
 void editorProcessKeypress();
 
-/* output func declaration */
-void editorRefreshScreen();
-void editorDrawRows();
-
 /* init func declarations */
 void initEditor();
+
+/* append buffer, lets make dynamic string type */
+struct abuf {
+	char* b;
+	int len;
+};
+
+#define ABUF_INIT {NULL, 0}
+
+/* append buffer functions declaration */
+void abAppend(struct abuf*, const char*, int len);
+void abFree(struct abuf*);
+
+/* output func declaration */
+void editorRefreshScreen();
+void editorDrawRows(struct abuf*);
 
 int main() {
 	enableRawMode();
@@ -49,8 +64,28 @@ int main() {
 	return EXIT_SUCCESS;
 }
 
+/* append buffer functions realization */
+void abAppend(struct abuf* ab, const char* s, int len) {
+	char* new = realloc(ab->b, ab->len + len);
+	if (new == NULL) {
+		fprintf(stderr, "\nMemory allocation error in abAppend!\n");
+		return;
+	}
+
+	memcpy(&new[ab->len], s, len);
+	ab->b = new;
+	ab->len += len;
+}
+
+void abFree(struct abuf* ab) {
+	free(ab->b);
+}
+
 /* init functions realization */
 void initEditor() {
+	E.cursor_x = 0;
+	E.cursor_y = 0;
+
 	if (getWindowSize(&E.screenrows, &E.screencols) == -1) {
 		quit_error("getWindowSize error in initEditor");
 	}
@@ -115,7 +150,7 @@ int getCursorPosition(int* rows, int* cols) {
 
 	char buf[32];
 	unsigned int i = 0;
-	
+
 	while (i < sizeof(buf) -1) {
 		if (read(STDIN_FILENO, &buf[i], 1) != 1) {
 			break;
@@ -127,7 +162,7 @@ int getCursorPosition(int* rows, int* cols) {
 		++i;
 	}
 	buf[i] = '\0';
-	
+
 	if (buf[0] != '\x1b' || buf[1] != '[') {
 		return -1;
 	}
@@ -170,20 +205,47 @@ void editorProcessKeypress() {
 }
 
 /* output func realization */
-void editorDrawRows() {
+void editorDrawRows(struct abuf* ab) {
 	for (int i = 0; i < E.screenrows; ++i) {
-		write(STDOUT_FILENO, "~>", 2);
+		if (i == E.screenrows / 3) {
+			char welcome_msg[80];
+			int welcome_msg_len = snprintf(welcome_msg, sizeof(welcome_msg),
+					"Ctrl + C editor --> version %s", CTRLC_VERSION);
+			if (welcome_msg_len > E.screencols) {
+				welcome_msg_len = E.screencols;
+			}
+			int padding = (E.screencols - welcome_msg_len) / 2;
+			if (padding) {
+				abAppend(ab, "~>", 2);
+				padding -= 2;
+			}
+			while (padding--) {
+				abAppend(ab, " ", 1);
+			}
+			abAppend(ab, welcome_msg, welcome_msg_len);
+		}
+		else {	
+			abAppend(ab, "~>", 2);
+		}
 		
+		abAppend(ab, "\x1b[K", 3); //erase the part of the line to the right of the cursor
 		if (i < E.screenrows - 1) {
-			write(STDOUT_FILENO, "\r\n", 2);
+			abAppend(ab, "\r\n", 2);
 		}
 	}
 }
 
 void editorRefreshScreen() {
-	write(STDOUT_FILENO, "\x1b[2J", 4);
-	write(STDOUT_FILENO, "\x1b[H", 3);
+	struct abuf ab = ABUF_INIT;
 
-	editorDrawRows();
-	write(STDOUT_FILENO, "\x1b[H", 3);
+	abAppend(&ab, "\x1b[?25l", 6); //hide the cursor
+	//abAppend(&ab, "\x1b[2J", 4);
+	abAppend(&ab, "\x1b[H", 3);
+	editorDrawRows(&ab);
+
+	abAppend(&ab, "\x1b[H", 3);
+	abAppend(&ab, "\x1b[?25h", 6); //show the cursor
+
+	write(STDOUT_FILENO, ab.b, ab.len);
+	abFree(&ab);
 }
