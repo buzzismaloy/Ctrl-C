@@ -31,6 +31,7 @@ int getCursorPosition(int*, int*);
 int getWindowSize(int*, int*);
 
 /* input func declarations */
+void editorMoveCursor(char);
 void editorProcessKeypress();
 
 /* init func declarations */
@@ -192,6 +193,23 @@ int getWindowSize(int* rows, int* cols) {
 }
 
 /* input func realization */
+void editorMoveCursor(char key) {
+	switch (key) {
+		case 'a':
+			--E.cursor_x;
+			break;
+		case 'd':
+			++E.cursor_x;
+			break;
+		case 'w':
+			--E.cursor_y;
+			break;
+		case 's':
+			++E.cursor_y;
+			break;
+	}
+}
+
 void editorProcessKeypress() {
 	char c = editorReadKey();
 
@@ -200,6 +218,13 @@ void editorProcessKeypress() {
 			write(STDOUT_FILENO, "\x1b[2J", 4);
 			write(STDOUT_FILENO, "\x1b[H", 3);
 			exit(EXIT_SUCCESS);
+			break;
+
+		case 'w':
+		case 's':
+		case 'a':
+		case 'd':
+			editorMoveCursor(c);
 			break;
 	}
 }
@@ -224,10 +249,10 @@ void editorDrawRows(struct abuf* ab) {
 			}
 			abAppend(ab, welcome_msg, welcome_msg_len);
 		}
-		else {	
+		else {
 			abAppend(ab, "~>", 2);
 		}
-		
+
 		abAppend(ab, "\x1b[K", 3); //erase the part of the line to the right of the cursor
 		if (i < E.screenrows - 1) {
 			abAppend(ab, "\r\n", 2);
@@ -243,7 +268,10 @@ void editorRefreshScreen() {
 	abAppend(&ab, "\x1b[H", 3);
 	editorDrawRows(&ab);
 
-	abAppend(&ab, "\x1b[H", 3);
+	char buff[32];
+	snprintf(buff, sizeof(buff), "\x1b[%d;%dH", E.cursor_y + 1, E.cursor_x + 1);
+	abAppend(&ab, buff, strlen(buff));
+
 	abAppend(&ab, "\x1b[?25h", 6); //show the cursor
 
 	write(STDOUT_FILENO, ab.b, ab.len);
