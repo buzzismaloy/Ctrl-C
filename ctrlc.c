@@ -20,18 +20,25 @@ struct editorConfig {
 	struct termios orig_termios;
 };
 
+enum editorKey {
+	ARROW_LEFT = 5000,
+	ARROW_RIGHT,
+	ARROW_UP,
+	ARROW_DOWN
+};
+
 struct editorConfig E;
 
 /* terminal functions declarations */
 void disableRawMode();
 void enableRawMode();
 void quit_error(const char*); // program dies with error
-char editorReadKey();
+int editorReadKey();
 int getCursorPosition(int*, int*);
 int getWindowSize(int*, int*);
 
 /* input func declarations */
-void editorMoveCursor(char);
+void editorMoveCursor(int);
 void editorProcessKeypress();
 
 /* init func declarations */
@@ -129,7 +136,7 @@ void enableRawMode() {
 	}
 }
 
-char editorReadKey() {
+int editorReadKey() {
 	int nread;
 	char c;
 	while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
@@ -141,7 +148,26 @@ char editorReadKey() {
 		}
 	}
 
-	return c;
+	if (c == '\x1b') {
+		char seq[3];
+
+		if (read(STDIN_FILENO, &seq[0], 1) != 1) return '\x1b';
+		if (read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
+
+		if (seq[0] == '[') {
+			switch (seq[1]) {
+				case 'A': return ARROW_UP;
+				case 'B': return ARROW_DOWN;
+				case 'C': return ARROW_RIGHT;
+				case 'D': return ARROW_LEFT;
+			}
+		}
+
+		return '\x1b';
+	}
+	else {
+		return c;
+	}
 }
 
 int getCursorPosition(int* rows, int* cols) {
@@ -193,25 +219,33 @@ int getWindowSize(int* rows, int* cols) {
 }
 
 /* input func realization */
-void editorMoveCursor(char key) {
+void editorMoveCursor(int key) {
 	switch (key) {
-		case 'a':
-			--E.cursor_x;
+		case ARROW_LEFT:
+			if (E.cursor_x != 0) {
+				--E.cursor_x;
+			}
 			break;
-		case 'd':
-			++E.cursor_x;
+		case ARROW_RIGHT:
+			if (E.cursor_x != E.screencols - 1) {
+				++E.cursor_x;
+			}
 			break;
-		case 'w':
-			--E.cursor_y;
+		case ARROW_UP:
+			if (E.cursor_y != 0) {
+				--E.cursor_y;
+			}
 			break;
-		case 's':
-			++E.cursor_y;
+		case ARROW_DOWN:
+			if (E.cursor_y != E.screenrows - 1) {
+				++E.cursor_y;
+			}
 			break;
 	}
 }
 
 void editorProcessKeypress() {
-	char c = editorReadKey();
+	int c = editorReadKey();
 
 	switch (c) {
 		case CTRL_KEY('q'):
@@ -220,10 +254,10 @@ void editorProcessKeypress() {
 			exit(EXIT_SUCCESS);
 			break;
 
-		case 'w':
-		case 's':
-		case 'a':
-		case 'd':
+		case ARROW_UP:
+		case ARROW_DOWN:
+		case ARROW_LEFT:
+		case ARROW_RIGHT:
 			editorMoveCursor(c);
 			break;
 	}
