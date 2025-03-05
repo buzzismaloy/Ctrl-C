@@ -26,6 +26,7 @@ typedef struct erow {
 
 struct editorConfig {
 	int cursor_x, cursor_y;
+	int rowoffset;
 	int screenrows;
 	int screencols;
 	struct termios orig_termios;
@@ -81,6 +82,7 @@ void abAppend(struct abuf*, const char*, int len);
 void abFree(struct abuf*);
 
 /* output func declaration */
+void editorScroll();
 void editorRefreshScreen();
 void editorDrawRows(struct abuf*);
 
@@ -122,6 +124,7 @@ void initEditor() {
 	E.cursor_y = 0;
 	E.numrows = 0;
 	E.row = NULL;
+	E.rowoffset = 0;
 
 	if (getWindowSize(&E.screenrows, &E.screencols) == -1) {
 		quit_error("getWindowSize error in initEditor");
@@ -322,7 +325,7 @@ void editorMoveCursor(int key) {
 			}
 			break;
 		case ARROW_DOWN:
-			if (E.cursor_y != E.screenrows - 1) {
+			if (E.cursor_y < E.numrows) {
 				++E.cursor_y;
 			}
 			break;
@@ -367,9 +370,20 @@ void editorProcessKeypress() {
 }
 
 /* output func realization */
+void editorScroll() {
+	if (E.cursor_y < E.rowoffset) {
+		E.rowoffset = E.cursor_y;
+	}
+
+	if (E.cursor_y >= E.rowoffset + E.screenrows) {
+		E.rowoffset = E.cursor_y - E.screenrows + 1;
+	}
+}
+
 void editorDrawRows(struct abuf* ab) {
 	for (int i = 0; i < E.screenrows; ++i) {
-		if (i >= E.numrows) {
+		int filerow = i + E.rowoffset;
+		if (filerow >= E.numrows) {
 			if (E.numrows == 0 && i == E.screenrows / 3) {
 				char welcome_msg[80];
 				int welcome_msg_len = snprintf(welcome_msg, sizeof(welcome_msg),
@@ -392,11 +406,11 @@ void editorDrawRows(struct abuf* ab) {
 			}
 		}
 		else {
-			int len = E.row[i].size;
+			int len = E.row[filerow].size;
 			if (len > E.screencols) {
 				len = E.screencols;
 			}
-			abAppend(ab, E.row[i].chars, len);
+			abAppend(ab, E.row[filerow].chars, len);
 		}
 
 		abAppend(ab, "\x1b[K", 3); //erase the part of the line to the right of the cursor
@@ -407,6 +421,8 @@ void editorDrawRows(struct abuf* ab) {
 }
 
 void editorRefreshScreen() {
+	editorScroll();
+
 	struct abuf ab = ABUF_INIT;
 
 	abAppend(&ab, "\x1b[?25l", 6); //hide the cursor
@@ -415,7 +431,7 @@ void editorRefreshScreen() {
 	editorDrawRows(&ab);
 
 	char buff[32];
-	snprintf(buff, sizeof(buff), "\x1b[%d;%dH", E.cursor_y + 1, E.cursor_x + 1);
+	snprintf(buff, sizeof(buff), "\x1b[%d;%dH", (E.cursor_y - E.rowoffset) + 1, E.cursor_x + 1);
 	abAppend(&ab, buff, strlen(buff));
 
 	abAppend(&ab, "\x1b[?25h", 6); //show the cursor
