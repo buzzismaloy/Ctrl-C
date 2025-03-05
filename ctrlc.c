@@ -1,3 +1,8 @@
+/* macros for fine compiling the getline func on every machine */
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
+
 /* includes */
 #include <stdio.h>
 #include <termios.h>
@@ -7,24 +12,37 @@
 #include <errno.h>
 #include <sys/ioctl.h>
 #include <string.h>
+#include <sys/types.h>
 
 /* defines */
 #define CTRL_KEY(k) ((k) & 0x1f) // getting the control key version of the k like ctrl + letter
 #define CTRLC_VERSION "1.0"
 
 /* data */
+typedef struct erow {
+	int size;
+	char* chars;
+} erow;
+
 struct editorConfig {
 	int cursor_x, cursor_y;
 	int screenrows;
 	int screencols;
 	struct termios orig_termios;
+	int numrows;
+	erow row;
 };
 
 enum editorKey {
 	ARROW_LEFT = 5000,
 	ARROW_RIGHT,
 	ARROW_UP,
-	ARROW_DOWN
+	ARROW_DOWN,
+	PAGE_UP,
+	PAGE_DOWN,
+	HOME,
+	END,
+	DELETE
 };
 
 struct editorConfig E;
@@ -36,6 +54,9 @@ void quit_error(const char*); // program dies with error
 int editorReadKey();
 int getCursorPosition(int*, int*);
 int getWindowSize(int*, int*);
+
+/* file input/ouput func declarations */
+void editorOpen(char*);
 
 /* input func declarations */
 void editorMoveCursor(int);
@@ -60,9 +81,12 @@ void abFree(struct abuf*);
 void editorRefreshScreen();
 void editorDrawRows(struct abuf*);
 
-int main() {
+int main(int argc, char* argv[]) {
 	enableRawMode();
 	initEditor();
+	if (argc >= 2) {
+		editorOpen(argv[1]);
+	}
 
 	while (1) {
 		editorRefreshScreen();
@@ -93,6 +117,7 @@ void abFree(struct abuf* ab) {
 void initEditor() {
 	E.cursor_x = 0;
 	E.cursor_y = 0;
+	E.numrows = 0;
 
 	if (getWindowSize(&E.screenrows, &E.screencols) == -1) {
 		quit_error("getWindowSize error in initEditor");
@@ -155,11 +180,35 @@ int editorReadKey() {
 		if (read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
 
 		if (seq[0] == '[') {
+			if (seq[1] >= '0' && seq[1] <= '9') {
+				if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
+				if (seq[2] == '~') {
+					switch (seq[1]) {
+						case '1': return HOME;
+						case '3': return DELETE;
+						case '4': return END;
+						case '5': return PAGE_UP;
+						case '6': return PAGE_DOWN;
+						case '7': return HOME;
+						case '8': return END;
+					}
+				}
+			}
+			else {
+				switch (seq[1]) {
+					case 'A': return ARROW_UP;
+					case 'B': return ARROW_DOWN;
+					case 'C': return ARROW_RIGHT;
+					case 'D': return ARROW_LEFT;
+					case 'H': return HOME;
+					case 'F': return END;
+				}
+			}
+		}
+		else if (seq[0] == 'O') {
 			switch (seq[1]) {
-				case 'A': return ARROW_UP;
-				case 'B': return ARROW_DOWN;
-				case 'C': return ARROW_RIGHT;
-				case 'D': return ARROW_LEFT;
+				case 'H': return HOME;
+				case 'F': return END;
 			}
 		}
 
@@ -218,6 +267,30 @@ int getWindowSize(int* rows, int* cols) {
 	}
 }
 
+/* file input/output func realization */
+void editorOpen(char* filename) {
+	FILE* fp = fopen(filename, "r");
+	if (!fp) {
+		quit_error("error opening file; editorOpen func");
+	}
+	char* line = NULL;
+	size_t linecap = 0;
+	ssize_t linelen = getline(&line, &linecap, fp);
+	if (linelen != -1) {
+		while (linelen > 0 && (line[linelen - 1] == '\n' ||
+							line[linelen - 1] == '\r')) {
+			--linelen;
+		}
+		E.row.size = linelen;
+		E.row.chars = malloc(linelen + 1);
+		memcpy(E.row.chars, line, linelen);
+		E.row.chars[linelen] = '\0';
+		E.numrows = 1;
+	}
+	free(line);
+	fclose(fp);
+}
+
 /* input func realization */
 void editorMoveCursor(int key) {
 	switch (key) {
@@ -260,31 +333,58 @@ void editorProcessKeypress() {
 		case ARROW_RIGHT:
 			editorMoveCursor(c);
 			break;
+
+		case PAGE_UP:
+		case PAGE_DOWN:
+			{
+			int scroll_times = E.screenrows;
+			while (scroll_times--) {
+				editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+			}
+			break;
+			}
+
+		case HOME:
+			E.cursor_x = 0;
+			break;
+
+		case END:
+			E.cursor_x = E.screencols - 1;
+			break;
 	}
 }
 
 /* output func realization */
 void editorDrawRows(struct abuf* ab) {
 	for (int i = 0; i < E.screenrows; ++i) {
-		if (i == E.screenrows / 3) {
-			char welcome_msg[80];
-			int welcome_msg_len = snprintf(welcome_msg, sizeof(welcome_msg),
-					"Ctrl + C editor --> version %s", CTRLC_VERSION);
-			if (welcome_msg_len > E.screencols) {
-				welcome_msg_len = E.screencols;
+		if (i >= E.numrows) {
+			if (E.numrows == 0 && i == E.screenrows / 3) {
+				char welcome_msg[80];
+				int welcome_msg_len = snprintf(welcome_msg, sizeof(welcome_msg),
+						"Ctrl + C editor --> version %s", CTRLC_VERSION);
+				if (welcome_msg_len > E.screencols) {
+					welcome_msg_len = E.screencols;
+				}
+				int padding = (E.screencols - welcome_msg_len) / 2;
+				if (padding) {
+					abAppend(ab, "~>", 2);
+					padding -= 2;
+				}
+				while (padding--) {
+					abAppend(ab, " ", 1);
+				}
+				abAppend(ab, welcome_msg, welcome_msg_len);
 			}
-			int padding = (E.screencols - welcome_msg_len) / 2;
-			if (padding) {
+			else {
 				abAppend(ab, "~>", 2);
-				padding -= 2;
 			}
-			while (padding--) {
-				abAppend(ab, " ", 1);
-			}
-			abAppend(ab, welcome_msg, welcome_msg_len);
 		}
 		else {
-			abAppend(ab, "~>", 2);
+			int len = E.row.size;
+			if (len > E.screencols) {
+				len = E.screencols;
+			}
+			abAppend(ab, E.row.chars, len);
 		}
 
 		abAppend(ab, "\x1b[K", 3); //erase the part of the line to the right of the cursor
