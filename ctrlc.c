@@ -27,6 +27,7 @@ typedef struct erow {
 struct editorConfig {
 	int cursor_x, cursor_y;
 	int rowoffset;
+	int coloffset;
 	int screenrows;
 	int screencols;
 	struct termios orig_termios;
@@ -125,6 +126,7 @@ void initEditor() {
 	E.numrows = 0;
 	E.row = NULL;
 	E.rowoffset = 0;
+	E.coloffset = 0;
 
 	if (getWindowSize(&E.screenrows, &E.screencols) == -1) {
 		quit_error("getWindowSize error in initEditor");
@@ -315,9 +317,7 @@ void editorMoveCursor(int key) {
 			}
 			break;
 		case ARROW_RIGHT:
-			if (E.cursor_x != E.screencols - 1) {
-				++E.cursor_x;
-			}
+			++E.cursor_x;
 			break;
 		case ARROW_UP:
 			if (E.cursor_y != 0) {
@@ -378,6 +378,14 @@ void editorScroll() {
 	if (E.cursor_y >= E.rowoffset + E.screenrows) {
 		E.rowoffset = E.cursor_y - E.screenrows + 1;
 	}
+
+	if (E.cursor_x < E.coloffset) {
+		E.coloffset = E.cursor_x;
+	}
+
+	if (E.cursor_x >= E.coloffset + E.screencols) {
+		E.coloffset = E.cursor_x - E.screencols + 1;
+	}
 }
 
 void editorDrawRows(struct abuf* ab) {
@@ -406,11 +414,14 @@ void editorDrawRows(struct abuf* ab) {
 			}
 		}
 		else {
-			int len = E.row[filerow].size;
+			int len = E.row[filerow].size - E.coloffset;
+			if (len < 0) {
+				len = 0;
+			}
 			if (len > E.screencols) {
 				len = E.screencols;
 			}
-			abAppend(ab, E.row[filerow].chars, len);
+			abAppend(ab, &E.row[filerow].chars[E.coloffset], len);
 		}
 
 		abAppend(ab, "\x1b[K", 3); //erase the part of the line to the right of the cursor
@@ -431,7 +442,8 @@ void editorRefreshScreen() {
 	editorDrawRows(&ab);
 
 	char buff[32];
-	snprintf(buff, sizeof(buff), "\x1b[%d;%dH", (E.cursor_y - E.rowoffset) + 1, E.cursor_x + 1);
+	snprintf(buff, sizeof(buff), "\x1b[%d;%dH",
+			(E.cursor_y - E.rowoffset) + 1, (E.cursor_x - E.coloffset) + 1);
 	abAppend(&ab, buff, strlen(buff));
 
 	abAppend(&ab, "\x1b[?25h", 6); //show the cursor
