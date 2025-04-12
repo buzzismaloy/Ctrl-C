@@ -17,15 +17,19 @@
 /* defines */
 #define CTRL_KEY(k) ((k) & 0x1f) // getting the control key version of the k like ctrl + letter
 #define CTRLC_VERSION "1.0"
+#define CTRLC_TAB_STOP 8
 
 /* data */
 typedef struct erow {
 	int size;
+	int render_size;
 	char* chars;
+	char* render;
 } erow;
 
 struct editorConfig {
 	int cursor_x, cursor_y;
+	int render_x;
 	int rowoffset;
 	int coloffset;
 	int screenrows;
@@ -59,6 +63,8 @@ int getWindowSize(int*, int*);
 
 /* row operations func declarations */
 void editorAppendRow(char*, size_t);
+void editorUpdateRow(erow*);
+int editorRowCxToRx(erow*, int);
 
 /* file input/ouput func declarations */
 void editorOpen(char*);
@@ -123,6 +129,7 @@ void abFree(struct abuf* ab) {
 void initEditor() {
 	E.cursor_x = 0;
 	E.cursor_y = 0;
+	E.render_x = 0;
 	E.numrows = 0;
 	E.row = NULL;
 	E.rowoffset = 0;
@@ -277,6 +284,43 @@ int getWindowSize(int* rows, int* cols) {
 }
 
 /* row operations func realization */
+int editorRowCxToRx(erow* row, int cx) {
+	int rx = 0;
+	for (int j = 0; j < cx; ++j) {
+		if (row->chars[j] == '\t') {
+			rx += (CTRLC_TAB_STOP - 1) - (rx % CTRLC_TAB_STOP);
+		}
+		++rx;
+	}
+
+	return rx;
+}
+
+void editorUpdateRow(erow* row) {
+	int tabs = 0;
+	for (int i = 0; i < row->size; ++i) {
+		if (row->chars[i] == '\t') ++tabs;
+	}
+
+	free(row->render);
+	row->render = malloc(row->size + tabs * (CTRLC_TAB_STOP - 1) + 1);
+
+	int idx = 0;
+	for (int j = 0; j < row->size; ++j) {
+		if (row->chars[j] == '\t') {
+			row->render[idx++] = ' ';
+			while (idx % CTRLC_TAB_STOP != 0) {
+				row->render[idx++] = ' ';
+			}
+		}
+		else {
+			row->render[idx++] = row->chars[j];
+		}
+	}
+	row->render[idx] = '\0';
+	row->render_size = idx;
+}
+
 void editorAppendRow(char* string, size_t len) {
 	E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
 
@@ -285,6 +329,11 @@ void editorAppendRow(char* string, size_t len) {
 	E.row[new_line].chars = malloc(len + 1);
 	memcpy(E.row[new_line].chars, string, len);
 	E.row[new_line].chars[len] = '\0';
+
+	E.row[new_line].render_size = 0;
+	E.row[new_line].render = NULL;
+	editorUpdateRow(&E.row[new_line]);
+
 	++E.numrows;
 }
 
@@ -388,6 +437,11 @@ void editorProcessKeypress() {
 
 /* output func realization */
 void editorScroll() {
+	E.render_x = 0;
+	if (E.cursor_y < E.numrows) {
+		E.render_x = editorRowCxToRx(&E.row[E.cursor_y], E.cursor_x);
+	}
+
 	if (E.cursor_y < E.rowoffset) {
 		E.rowoffset = E.cursor_y;
 	}
@@ -396,12 +450,12 @@ void editorScroll() {
 		E.rowoffset = E.cursor_y - E.screenrows + 1;
 	}
 
-	if (E.cursor_x < E.coloffset) {
-		E.coloffset = E.cursor_x;
+	if (E.render_x < E.coloffset) {
+		E.coloffset = E.render_x;
 	}
 
-	if (E.cursor_x >= E.coloffset + E.screencols) {
-		E.coloffset = E.cursor_x - E.screencols + 1;
+	if (E.render_x >= E.coloffset + E.screencols) {
+		E.coloffset = E.render_x - E.screencols + 1;
 	}
 }
 
@@ -431,14 +485,14 @@ void editorDrawRows(struct abuf* ab) {
 			}
 		}
 		else {
-			int len = E.row[filerow].size - E.coloffset;
+			int len = E.row[filerow].render_size - E.coloffset;
 			if (len < 0) {
 				len = 0;
 			}
 			if (len > E.screencols) {
 				len = E.screencols;
 			}
-			abAppend(ab, &E.row[filerow].chars[E.coloffset], len);
+			abAppend(ab, &E.row[filerow].render[E.coloffset], len);
 		}
 
 		abAppend(ab, "\x1b[K", 3); //erase the part of the line to the right of the cursor
@@ -460,7 +514,7 @@ void editorRefreshScreen() {
 
 	char buff[32];
 	snprintf(buff, sizeof(buff), "\x1b[%d;%dH",
-			(E.cursor_y - E.rowoffset) + 1, (E.cursor_x - E.coloffset) + 1);
+			(E.cursor_y - E.rowoffset) + 1, (E.render_x - E.coloffset) + 1);
 	abAppend(&ab, buff, strlen(buff));
 
 	abAppend(&ab, "\x1b[?25h", 6); //show the cursor
