@@ -15,11 +15,13 @@
 #include <sys/types.h>
 #include <time.h>
 #include <stdarg.h>
+#include <fcntl.h>
 
 /* defines */
 #define CTRL_KEY(k) ((k) & 0x1f) // getting the control key version of the k like ctrl + letter
 #define CTRLC_VERSION "1.0"
 #define CTRLC_TAB_STOP 8
+#define CTRLC_QUIT_TIMES 2
 
 /* data */
 typedef struct erow {
@@ -42,9 +44,11 @@ struct editorConfig {
 	char* filename;
 	char statusmsg[80];
 	time_t statusmsg_time;
+	int dirty; //flag that tells us whether the file was modified or not
 };
 
 enum editorKey {
+	BACKSPACE = 127,
 	ARROW_LEFT = 5000,
 	ARROW_RIGHT,
 	ARROW_UP,
@@ -71,12 +75,16 @@ void editorAppendRow(char*, size_t);
 void editorUpdateRow(erow*);
 int editorRowCxToRx(erow*, int);
 void editorRowInsertChar(erow*, int, int);
+void editorRowDelChar(erow*, int);
 
 /* editor operations func declarations */
 void editorInsertChar(int);
+void editorDelChar();
 
 /* file input/ouput func declarations */
 void editorOpen(char*);
+char* editorRowsToString(int*);
+void editorSave();
 
 /* input func declarations */
 void editorMoveCursor(int);
@@ -112,7 +120,7 @@ int main(int argc, char* argv[]) {
 		editorOpen(argv[1]);
 	}
 
-	editorSetStatusMessage("HELP: Ctrl+Q = quit");
+	editorSetStatusMessage("HELP: Ctrl+Q = quit | Ctrl+S = save");
 
 	while (1) {
 		editorRefreshScreen();
@@ -151,6 +159,7 @@ void initEditor() {
 	E.coloffset = 0;
 	E.statusmsg[0] = '\0';
 	E.statusmsg_time = 0;
+	E.dirty = 0;
 
 	if (getWindowSize(&E.screenrows, &E.screencols) == -1) {
 		quit_error("getWindowSize error in initEditor");
@@ -354,6 +363,7 @@ void editorAppendRow(char* string, size_t len) {
 	editorUpdateRow(&E.row[new_line]);
 
 	++E.numrows;
+	++E.dirty;
 }
 
 void editorRowInsertChar(erow* row, int at, int c) {
@@ -365,6 +375,16 @@ void editorRowInsertChar(erow* row, int at, int c) {
 	row->size++;
 	row->chars[at] = c;
 	editorUpdateRow(row);
+	++E.dirty;
+}
+
+void editorRowDelChar(erow* row, int at) {
+	if (at < 0 || at >= row->size) return;
+
+	memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
+	row->size--;
+	editorUpdateRow(row);
+	E.dirty++;
 }
 
 /* editor operations func realization */
@@ -377,7 +397,37 @@ void editorInsertChar(int c) {
 	E.cursor_x++;
 }
 
+void editorDelChar() {
+	if (E.cursor_y == E.numrows) return;
+
+	erow* row = &E.row[E.cursor_y];
+	if (E.cursor_x > 0) {
+		editorRowDelChar(row, E.cursor_x - 1);
+		--E.cursor_x;
+	}
+}
+
 /* file input/output func realization */
+char* editorRowsToString(int* bufflen) {
+	int totallen = 0;
+	for (int j = 0; j < E.numrows; ++j) {
+		totallen += E.row[j].size + 1;
+	}
+	*bufflen = totallen;
+
+	char* buff = malloc(totallen);
+	char* p= buff;
+
+	for (int j = 0; j < E.numrows; ++j) {
+		memcpy(p, E.row[j].chars, E.row[j].size);
+		p += E.row[j].size;
+		*p = '\n';
+		++p;
+	}
+
+	return buff;
+}
+
 void editorOpen(char* filename) {
 	free(E.filename);
 	E.filename = strdup(filename);
@@ -398,6 +448,30 @@ void editorOpen(char* filename) {
 	}
 	free(line);
 	fclose(fp);
+	E.dirty = 0;
+}
+
+void editorSave() {
+	if (E.filename == NULL) return;
+
+	int len;
+	char* buff = editorRowsToString(&len);
+
+	int fd = open(E.filename, O_RDWR | O_CREAT, 0644);
+	if (fd != -1) {
+		if (ftruncate(fd, len) != -1) {
+			if (write(fd, buff, len) == len) {
+				close(fd);
+				free(buff);
+				E.dirty = 0;
+				editorSetStatusMessage("%d bytes written to disk", len);
+				return;
+			}
+		}
+		close(fd);
+	}
+	free(buff);
+	editorSetStatusMessage("Cant save! I/O error: %s", strerror(errno));
 }
 
 /* input func realization */
@@ -442,13 +516,30 @@ void editorMoveCursor(int key) {
 }
 
 void editorProcessKeypress() {
+	static int quit_times = CTRLC_QUIT_TIMES;
+
 	int c = editorReadKey();
 
 	switch (c) {
+		case '\r':
+			//todo
+			break;
+
 		case CTRL_KEY('q'):
+			if (E.dirty && quit_times > 0) {
+				editorSetStatusMessage(
+						"WARNING!!! File has unsaved changes. Press Ctrl+Q %d more times to quit",
+						quit_times);
+				--quit_times;
+				return;
+			}
 			write(STDOUT_FILENO, "\x1b[2J", 4);
 			write(STDOUT_FILENO, "\x1b[H", 3);
 			exit(EXIT_SUCCESS);
+			break;
+
+		case CTRL_KEY('s'):
+			editorSave();
 			break;
 
 		case ARROW_UP:
@@ -488,10 +579,25 @@ void editorProcessKeypress() {
 			}
 			break;
 
+		case BACKSPACE:
+		case CTRL_KEY('h'):
+		case DELETE:
+			if (c == DELETE) {
+				editorMoveCursor(ARROW_RIGHT);
+			}
+			editorDelChar();
+			break;
+
+		case CTRL_KEY('l'):
+		case '\x1b':
+			break;
+
 		default:
 			editorInsertChar(c);
 			break;
 	}
+
+	quit_times = CTRLC_QUIT_TIMES;
 }
 
 /* output func realization */
@@ -563,8 +669,8 @@ void editorDrawRows(struct abuf* ab) {
 void editorDrawStatusBar(struct abuf* ab) {
 	abAppend(ab, "\x1b[7m", 4);
 	char status[80], rstatus[80]; //rstatus stands for render status
-	int len = snprintf(status, sizeof(status), "%.20s - %d lines",
-			E.filename ? E.filename : "[No name]", E.numrows);
+	int len = snprintf(status, sizeof(status), "%.20s%s - %d lines",
+			E.filename ? E.filename : "[No name]", E.dirty ? "{+}" : "", E.numrows);
 	int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", //rlen stands for render length
 			E.cursor_y + 1, E.numrows);
 	if (len > E.screencols) {
