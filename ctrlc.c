@@ -79,6 +79,8 @@ void editorRowDelChar(erow*, int);
 void editorFreeRow(erow*);
 void editorDelRow(int at);
 void editorRowAppendString(erow*, char*, size_t);
+int editorRowRxToCx(erow*, int);
+
 
 /* editor operations func declarations */
 void editorInsertChar(int);
@@ -89,6 +91,9 @@ void editorInsertNewline();
 void editorOpen(char*);
 char* editorRowsToString(int*);
 void editorSave();
+
+/* find func declarations */
+void editorFind();
 
 /* input func declarations */
 void editorMoveCursor(int);
@@ -125,7 +130,8 @@ int main(int argc, char* argv[]) {
 		editorOpen(argv[1]);
 	}
 
-	editorSetStatusMessage("HELP: Ctrl+Q = quit | Ctrl+S = save");
+	editorSetStatusMessage(
+			"HELP: Ctrl+Q = quit | Ctrl+S = save | Ctrl+F = find");
 
 	while (1) {
 		editorRefreshScreen();
@@ -327,6 +333,21 @@ int editorRowCxToRx(erow* row, int cx) {
 	}
 
 	return rx;
+}
+
+int editorRowRxToCx(erow* row, int rx) {
+	int cur_rx = 0; //rx stands for render x
+	int cx; //cx stands for cursor_x
+	for (cx = 0; cx < row->size; ++cx) {
+		if (row->chars[cx] == '\t') {
+			cur_rx += (CTRLC_TAB_STOP - 1) - (cur_rx % CTRLC_TAB_STOP);
+		}
+		++cur_rx;
+
+		if (cur_rx > rx) return cx;
+	}
+
+	return cx;
 }
 
 void editorUpdateRow(erow* row) {
@@ -535,6 +556,25 @@ void editorSave() {
 	editorSetStatusMessage("Cant save! I/O error: %s", strerror(errno));
 }
 
+/* find func realization */
+void editorFind() {
+	char* query = editorPrompt("Search: %s (ESC to cancel)");
+	if (query == NULL) return;
+
+	for (int i = 0; i < E.numrows; ++i) {
+		erow* row = &E.row[i];
+		char* match = strstr(row->render, query);
+		if (match) {
+			E.cursor_y = i;
+			E.cursor_x = editorRowRxToCx(row, match - row->render);
+			E.rowoffset = E.numrows;
+			break;
+		}
+	}
+
+	free(query);
+}
+
 /* input func realization */
 char* editorPrompt(char* prompt) {
 	size_t buffsize = 128;
@@ -677,6 +717,10 @@ void editorProcessKeypress() {
 			if (E.cursor_y < E.numrows) {
 				E.cursor_x = E.row[E.cursor_y].size;
 			}
+			break;
+
+		case CTRL_KEY('f'):
+			editorFind();
 			break;
 
 		case BACKSPACE:
