@@ -93,6 +93,7 @@ void editorSave();
 /* input func declarations */
 void editorMoveCursor(int);
 void editorProcessKeypress();
+char* editorPrompt(char*);
 
 /* init func declarations */
 void initEditor();
@@ -506,7 +507,13 @@ void editorOpen(char* filename) {
 }
 
 void editorSave() {
-	if (E.filename == NULL) return;
+	if (E.filename == NULL) {
+		E.filename = editorPrompt("Save as: %s (ESC to cancel)");
+		if (E.filename == NULL) {
+			editorSetStatusMessage("Save aborted!");
+			return;
+		}
+	}
 
 	int len;
 	char* buff = editorRowsToString(&len);
@@ -529,6 +536,45 @@ void editorSave() {
 }
 
 /* input func realization */
+char* editorPrompt(char* prompt) {
+	size_t buffsize = 128;
+	char* buff = malloc(buffsize);
+
+	size_t bufflen = 0;
+	buff[0] = '\0';
+
+	while (1) {
+		editorSetStatusMessage(prompt, buff);
+		editorRefreshScreen();
+
+		int c = editorReadKey();
+		if (c == '\x1b') {
+			editorSetStatusMessage("");
+			free(buff);
+			return NULL;
+		}
+		else if (c == DELETE || c == CTRL_KEY('h') || c == BACKSPACE) {
+				if (bufflen != 0) {
+					buff[--bufflen] = '\0';
+				}
+		}
+		else if (c == '\r') {
+			if (bufflen != 0) {
+				editorSetStatusMessage("");
+				return buff;
+			}
+		}
+		else if (!iscntrl(c) && c < 128) {
+			if (bufflen == buffsize - 1) {
+				buffsize *= 2;
+				buff = realloc(buff, buffsize);
+			}
+			buff[bufflen++] = c;
+			buff[bufflen] = '\0';
+		}
+	}
+}
+
 void editorMoveCursor(int key) {
 	erow* row = (E.cursor_y >= E.numrows) ? NULL : &E.row[E.cursor_y];
 	switch (key) {
