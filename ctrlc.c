@@ -71,15 +71,19 @@ int getCursorPosition(int*, int*);
 int getWindowSize(int*, int*);
 
 /* row operations func declarations */
-void editorAppendRow(char*, size_t);
+void editorInsertRow(int, char*, size_t);
 void editorUpdateRow(erow*);
 int editorRowCxToRx(erow*, int);
 void editorRowInsertChar(erow*, int, int);
 void editorRowDelChar(erow*, int);
+void editorFreeRow(erow*);
+void editorDelRow(int at);
+void editorRowAppendString(erow*, char*, size_t);
 
 /* editor operations func declarations */
 void editorInsertChar(int);
 void editorDelChar();
+void editorInsertNewline();
 
 /* file input/ouput func declarations */
 void editorOpen(char*);
@@ -349,20 +353,46 @@ void editorUpdateRow(erow* row) {
 	row->render_size = idx;
 }
 
-void editorAppendRow(char* string, size_t len) {
+void editorInsertRow(int at, char* string, size_t len) {
+	if (at < 0 || at > E.numrows) return;
+
 	E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+	memmove(&E.row[at + 1], &E.row[at], sizeof(erow) * (E.numrows - at));
 
-	int new_line = E.numrows;
-	E.row[new_line].size = len;
-	E.row[new_line].chars = malloc(len + 1);
-	memcpy(E.row[new_line].chars, string, len);
-	E.row[new_line].chars[len] = '\0';
+	E.row[at].size = len;
+	E.row[at].chars = malloc(len + 1);
+	memcpy(E.row[at].chars, string, len);
+	E.row[at].chars[len] = '\0';
 
-	E.row[new_line].render_size = 0;
-	E.row[new_line].render = NULL;
-	editorUpdateRow(&E.row[new_line]);
+	E.row[at].render_size = 0;
+	E.row[at].render = NULL;
+	editorUpdateRow(&E.row[at]);
 
 	++E.numrows;
+	++E.dirty;
+}
+
+void editorFreeRow(erow* row) {
+	free(row->render);
+	free(row->chars);
+}
+
+void editorDelRow(int at) {
+	if (at < 0 || at >= E.numrows) return;
+
+	editorFreeRow(&E.row[at]);
+	memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1));
+	--E.numrows;
+	++E.dirty;
+}
+
+void editorRowAppendString(erow* row, char* s, size_t len) {
+	row->chars = realloc(row->chars, row->size + len + 1);
+	memcpy(&row->chars[row->size], s, len);
+	row->size += len;
+	row->chars[row->size] = '\0';
+	editorUpdateRow(row);
+
 	++E.dirty;
 }
 
@@ -390,20 +420,44 @@ void editorRowDelChar(erow* row, int at) {
 /* editor operations func realization */
 void editorInsertChar(int c) {
 	if (E.cursor_y == E.numrows) {
-		editorAppendRow("", 0);
+		editorInsertRow(E.numrows, "", 0);
 	}
 
 	editorRowInsertChar(&E.row[E.cursor_y], E.cursor_x, c);
 	E.cursor_x++;
 }
 
+void editorInsertNewline() {
+	if (E.cursor_x == 0) {
+		editorInsertRow(E.cursor_y, "", 0);
+	}
+	else {
+		erow* row = &E.row[E.cursor_y];
+		editorInsertRow(E.cursor_y + 1, &row->chars[E.cursor_x], row->size - E.cursor_x);
+		row = &E.row[E.cursor_y];
+		row->size = E.cursor_x;
+		row->chars[row->size] = '\0';
+		editorUpdateRow(row);
+	}
+
+	++E.cursor_y;
+	E.cursor_x = 0;
+}
+
 void editorDelChar() {
 	if (E.cursor_y == E.numrows) return;
+	if (E.cursor_x == 0 && E.cursor_y == 0) return;
 
 	erow* row = &E.row[E.cursor_y];
 	if (E.cursor_x > 0) {
 		editorRowDelChar(row, E.cursor_x - 1);
 		--E.cursor_x;
+	}
+	else {
+		E.cursor_x = E.row[E.cursor_y - 1].size;
+		editorRowAppendString(&E.row[E.cursor_y - 1], row->chars, row->size);
+		editorDelRow(E.cursor_y);
+		--E.cursor_y;
 	}
 }
 
@@ -444,7 +498,7 @@ void editorOpen(char* filename) {
 							line[linelen - 1] == '\r')) {
 			--linelen;
 		}
-		editorAppendRow(line, linelen);
+		editorInsertRow(E.numrows, line, linelen);
 	}
 	free(line);
 	fclose(fp);
@@ -522,7 +576,7 @@ void editorProcessKeypress() {
 
 	switch (c) {
 		case '\r':
-			//todo
+			editorInsertNewline();
 			break;
 
 		case CTRL_KEY('q'):
