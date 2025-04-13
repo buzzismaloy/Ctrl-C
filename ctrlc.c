@@ -70,6 +70,10 @@ int getWindowSize(int*, int*);
 void editorAppendRow(char*, size_t);
 void editorUpdateRow(erow*);
 int editorRowCxToRx(erow*, int);
+void editorRowInsertChar(erow*, int, int);
+
+/* editor operations func declarations */
+void editorInsertChar(int);
 
 /* file input/ouput func declarations */
 void editorOpen(char*);
@@ -352,6 +356,27 @@ void editorAppendRow(char* string, size_t len) {
 	++E.numrows;
 }
 
+void editorRowInsertChar(erow* row, int at, int c) {
+	if (at < 0 || at > row->size) {
+		at = row->size;
+	}
+	row->chars = realloc(row->chars, row->size + 2);
+	memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
+	row->size++;
+	row->chars[at] = c;
+	editorUpdateRow(row);
+}
+
+/* editor operations func realization */
+void editorInsertChar(int c) {
+	if (E.cursor_y == E.numrows) {
+		editorAppendRow("", 0);
+	}
+
+	editorRowInsertChar(&E.row[E.cursor_y], E.cursor_x, c);
+	E.cursor_x++;
+}
+
 /* file input/output func realization */
 void editorOpen(char* filename) {
 	free(E.filename);
@@ -461,6 +486,10 @@ void editorProcessKeypress() {
 			if (E.cursor_y < E.numrows) {
 				E.cursor_x = E.row[E.cursor_y].size;
 			}
+			break;
+
+		default:
+			editorInsertChar(c);
 			break;
 	}
 }
