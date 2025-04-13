@@ -94,11 +94,12 @@ void editorSave();
 
 /* find func declarations */
 void editorFind();
+void editorFindCallback(char*, int);
 
 /* input func declarations */
 void editorMoveCursor(int);
 void editorProcessKeypress();
-char* editorPrompt(char*);
+char* editorPrompt(char*, void (*callback)(char*, int));
 
 /* init func declarations */
 void initEditor();
@@ -529,7 +530,7 @@ void editorOpen(char* filename) {
 
 void editorSave() {
 	if (E.filename == NULL) {
-		E.filename = editorPrompt("Save as: %s (ESC to cancel)");
+		E.filename = editorPrompt("Save as: %s (ESC to cancel)", NULL);
 		if (E.filename == NULL) {
 			editorSetStatusMessage("Save aborted!");
 			return;
@@ -557,9 +558,10 @@ void editorSave() {
 }
 
 /* find func realization */
-void editorFind() {
-	char* query = editorPrompt("Search: %s (ESC to cancel)");
-	if (query == NULL) return;
+void editorFindCallback(char* query, int key) {
+	if (key == '\r' || key == '\x1b') {
+		return;
+	}
 
 	for (int i = 0; i < E.numrows; ++i) {
 		erow* row = &E.row[i];
@@ -571,12 +573,18 @@ void editorFind() {
 			break;
 		}
 	}
+}
 
-	free(query);
+void editorFind() {
+	char* query = editorPrompt("Search: %s (ESC to cancel)", editorFindCallback);
+
+	if (query) {
+		free(query);
+	}
 }
 
 /* input func realization */
-char* editorPrompt(char* prompt) {
+char* editorPrompt(char* prompt, void (*callback)(char*, int)) {
 	size_t buffsize = 128;
 	char* buff = malloc(buffsize);
 
@@ -590,6 +598,9 @@ char* editorPrompt(char* prompt) {
 		int c = editorReadKey();
 		if (c == '\x1b') {
 			editorSetStatusMessage("");
+			if (callback) {
+				callback(buff, c);
+			}
 			free(buff);
 			return NULL;
 		}
@@ -601,6 +612,9 @@ char* editorPrompt(char* prompt) {
 		else if (c == '\r') {
 			if (bufflen != 0) {
 				editorSetStatusMessage("");
+				if (callback) {
+					callback(buff, c);
+				}
 				return buff;
 			}
 		}
@@ -611,6 +625,10 @@ char* editorPrompt(char* prompt) {
 			}
 			buff[bufflen++] = c;
 			buff[bufflen] = '\0';
+		}
+
+		if (callback) {
+			callback(buff, c);
 		}
 	}
 }
