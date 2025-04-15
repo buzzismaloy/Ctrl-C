@@ -959,10 +959,17 @@ void editorMoveCursor(int key) {
 			}
 			break;
 		case ARROW_DOWN:
-			if (E.cursor_y < E.numrows) {
+			if (E.cursor_y < E.numrows - 1) {
 				++E.cursor_y;
 			}
 			break;
+	}
+
+	if (E.numrows == 0) {
+		E.cursor_y = 0;
+	}
+	else if (E.cursor_y > E.numrows - 1) {
+		E.cursor_y = E.numrows - 1;
 	}
 
 	row = (E.cursor_y >= E.numrows) ? NULL : &E.row[E.cursor_y];
@@ -1166,8 +1173,11 @@ void editorDrawStatusBar(struct abuf* ab) {
 	char status[80], rstatus[80]; //rstatus stands for render status
 	int len = snprintf(status, sizeof(status), "%.20s%s - %d lines",
 			E.filename ? E.filename : "[No name]", E.dirty ? "{+}" : "", E.numrows);
+
+	int total_lines = E.numrows > 0 ? E.numrows : 1;
+	int current_line = E.numrows > 0 ? E.cursor_y + 1 : 0;
 	int rlen = snprintf(rstatus, sizeof(rstatus), "%s | %d/%d", //rlen stands for render length
-			E.syntax ? E.syntax->filetype : "no filetype", E.cursor_y + 1, E.numrows);
+			E.syntax ? E.syntax->filetype : "no filetype", current_line, total_lines);
 	if (len > E.screencols) {
 		len = E.screencols;
 	}
