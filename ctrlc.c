@@ -22,6 +22,7 @@
 #define CTRLC_VERSION "1.0"
 #define CTRLC_TAB_STOP 8
 #define CTRLC_QUIT_TIMES 2
+#define HL_HIGHLIGHT_NUMBERS (1<<0)
 
 /* data */
 typedef struct erow {
@@ -40,6 +41,7 @@ struct editorConfig {
 	int screenrows;
 	int screencols;
 	struct termios orig_termios;
+	struct editorSyntax* syntax;
 	int numrows;
 	erow* row;
 	char* filename;
@@ -67,7 +69,26 @@ enum editorHighlight {
 	HL_MATCH
 };
 
+struct editorSyntax {
+	char* filetype;
+	char** filematch;
+	int flags;
+};
+
 struct editorConfig E;
+
+/* filetypes */
+char* C_HL_extensions[] = { ".c", ".h", ".cpp", NULL };
+
+struct editorSyntax HLDB[] = {
+	{
+		"c",
+		C_HL_extensions,
+		HL_HIGHLIGHT_NUMBERS
+	},
+};
+
+#define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
 
 /* terminal functions declarations */
 void disableRawMode();
@@ -186,6 +207,7 @@ void initEditor() {
 	E.statusmsg[0] = '\0';
 	E.statusmsg_time = 0;
 	E.dirty = 0;
+	E.syntax = NULL;
 
 	if (getWindowSize(&E.screenrows, &E.screencols) == -1) {
 		quit_error("getWindowSize error in initEditor");
@@ -961,8 +983,8 @@ void editorDrawStatusBar(struct abuf* ab) {
 	char status[80], rstatus[80]; //rstatus stands for render status
 	int len = snprintf(status, sizeof(status), "%.20s%s - %d lines",
 			E.filename ? E.filename : "[No name]", E.dirty ? "{+}" : "", E.numrows);
-	int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", //rlen stands for render length
-			E.cursor_y + 1, E.numrows);
+	int rlen = snprintf(rstatus, sizeof(rstatus), "%s | %d/%d", //rlen stands for render length
+			E.syntax ? E.syntax->filetype : "no filetype", E.cursor_y + 1, E.numrows);
 	if (len > E.screencols) {
 		len = E.screencols;
 	}
