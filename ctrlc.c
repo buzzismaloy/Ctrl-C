@@ -22,6 +22,7 @@
 #define CTRLC_VERSION "1.0"
 #define CTRLC_TAB_STOP 8
 #define CTRLC_QUIT_TIMES 2
+#define LINENUM_MARGIN 4
 
 #define HL_HIGHLIGHT_NUMBERS (1<<0)
 #define HL_HIGHLIGHT_STRINGS (1<<1)
@@ -237,6 +238,7 @@ void initEditor() {
 	if (getWindowSize(&E.screenrows, &E.screencols) == -1) {
 		quit_error("getWindowSize error in initEditor");
 	}
+	E.screencols -= LINENUM_MARGIN;
 
 	E.screenrows -= 2;
 }
@@ -1118,6 +1120,15 @@ void editorDrawRows(struct abuf* ab) {
 			}
 		}
 		else {
+			char linenum_buf[16];
+			if (filerow == E.cursor_y) {
+				snprintf(linenum_buf, sizeof(linenum_buf), ">%2d ", filerow + 1);
+			}
+			else {
+				snprintf(linenum_buf, sizeof(linenum_buf), " %2d ", filerow + 1);
+			}
+			abAppend(ab, linenum_buf, strlen(linenum_buf));
+
 			int len = E.row[filerow].render_size - E.coloffset;
 			if (len < 0) {
 				len = 0;
@@ -1220,7 +1231,7 @@ void editorRefreshScreen() {
 
 	char buff[32];
 	snprintf(buff, sizeof(buff), "\x1b[%d;%dH",
-			(E.cursor_y - E.rowoffset) + 1, (E.render_x - E.coloffset) + 1);
+			(E.cursor_y - E.rowoffset) + 1, (E.render_x - E.coloffset) + 1 + LINENUM_MARGIN);
 	abAppend(&ab, buff, strlen(buff));
 
 	abAppend(&ab, "\x1b[?25h", 6); //show the cursor
