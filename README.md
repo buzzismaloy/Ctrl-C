@@ -41,4 +41,4 @@ cd ./Ctrl-C && make
 
 # See also
 
-* [Useful tutorial which i refer to](https://viewsourcecode.org/snaptoken/kilo/index.html)
+* [Useful tutorial which I refer to](https://viewsourcecode.org/snaptoken/kilo/index.html)
