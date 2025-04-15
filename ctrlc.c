@@ -996,7 +996,8 @@ void editorProcessKeypress() {
 		case CTRL_KEY('q'):
 			if (E.dirty && quit_times > 0) {
 				editorSetStatusMessage(
-						"WARNING!!! File has unsaved changes. Press Ctrl+Q %d more times to quit",
+						"WARNING!!! File has unsaved changes. "
+						"Press Ctrl+Q %d more times to quit",
 						quit_times);
 				--quit_times;
 				return;
@@ -1122,12 +1123,20 @@ void editorDrawRows(struct abuf* ab) {
 			}
 		}
 		else {
-			char linenum_buf[16];
+			int linenum_width = 1;
+			int max_line = E.numrows >= 1 ? E.numrows : 1;
+			while (max_line >= 10) {
+				linenum_width++;
+				max_line /= 10;
+			}
+			if (linenum_width > 4) linenum_width = 4;
+
+			char linenum_buf[32];
 			if (filerow == E.cursor_y) {
-				snprintf(linenum_buf, sizeof(linenum_buf), ">%2d ", filerow + 1);
+				snprintf(linenum_buf, sizeof(linenum_buf), ">%*d ", linenum_width, filerow + 1);
 			}
 			else {
-				snprintf(linenum_buf, sizeof(linenum_buf), " %2d ", filerow + 1);
+				snprintf(linenum_buf, sizeof(linenum_buf), " %*d ", linenum_width, filerow + 1);
 			}
 			abAppend(ab, linenum_buf, strlen(linenum_buf));
 
