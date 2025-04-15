@@ -10,6 +10,35 @@ This text editor implements some features:
 * Simple implementation of the status bar and message bar.
 * Simple implementation of line number output on the left before each line.
 
+# Dependencies
+
+* `GCC`. Make sure you have one:
+```bash
+gcc --version
+```
+
+* `GNU Make`. Make sure you have one:
+```bash
+make --version
+```
+
+# Usage
+
+1. Clone the repository:
+```bash
+git clone https://github.com/buzzismaloy/Ctrl-C.git
+```
+
+2. Compile with make:
+```bash
+make
+```
+
+3. Run text editor:
+```bash
+./ctrlc
+```
+
 # See also
 
 * [Useful tutorial which i refer to](https://viewsourcecode.org/snaptoken/kilo/index.html)
