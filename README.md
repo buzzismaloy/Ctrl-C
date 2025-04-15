@@ -29,9 +29,9 @@ make --version
 git clone https://github.com/buzzismaloy/Ctrl-C.git
 ```
 
-2. Compile with make:
+2. Go to the directory and compile with make:
 ```bash
-make
+cd ./Ctrl-C && make
 ```
 
 3. Run text editor:
